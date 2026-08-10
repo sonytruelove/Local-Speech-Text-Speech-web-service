@@ -11,27 +11,24 @@ import logging
 
 from app.config import (
     HOST,
-    PIPER_MODEL_PATH,
     PORT,
+    SILERO_LANGUAGE,
+    SILERO_MODEL_ID,
+    SILERO_SAMPLE_RATE,
+    SILERO_SPEAKER,
     WHISPER_COMPUTE_TYPE,
     WHISPER_DEVICE,
     WHISPER_MODEL_SIZE,
 )
 from app.main import app
 from app.stt import FasterWhisperRecognizer
-from app.tts import PiperSynthesizer
+from app.tts import SileroSynthesizer
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("voice-echo")
 
 
 def build_app():
-    if not PIPER_MODEL_PATH.exists():
-        raise RuntimeError(
-            f"Не найдена модель Piper: {PIPER_MODEL_PATH}. "
-            "Запустите download_models.ps1 перед стартом сервера."
-        )
-
     log.info(
         "Загружаю faster-whisper (%s, %s, %s)...",
         WHISPER_MODEL_SIZE,
@@ -44,8 +41,13 @@ def build_app():
         device=WHISPER_DEVICE,
     )
 
-    log.info("Загружаю голос Piper: %s", PIPER_MODEL_PATH.name)
-    app.state.synthesizer = PiperSynthesizer(str(PIPER_MODEL_PATH))
+    log.info("Загружаю Silero TTS (%s, speaker=%s)...", SILERO_MODEL_ID, SILERO_SPEAKER)
+    app.state.synthesizer = SileroSynthesizer(
+        language=SILERO_LANGUAGE,
+        model_id=SILERO_MODEL_ID,
+        speaker=SILERO_SPEAKER,
+        sample_rate=SILERO_SAMPLE_RATE,
+    )
 
     log.info("Модели загружены, сервис готов.")
     return app

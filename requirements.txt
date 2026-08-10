@@ -2,4 +2,15 @@ fastapi
 uvicorn[standard]
 python-multipart
 faster-whisper
+
+# TTS: Silero (активный бэкенд по умолчанию, см. app/config.py).
+# torch — ставьте ОТДЕЛЬНО через CPU-индекс ДО этого файла, иначе pip
+# на Windows молча утащит многогигабайтный CUDA-вариант:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch
+omegaconf
+numpy
+
+# TTS: Piper (альтернативный бэкенд, легче по ресурсам, но менее
+# естественный голос — см. app/tts.py:PiperSynthesizer).
 piper-tts

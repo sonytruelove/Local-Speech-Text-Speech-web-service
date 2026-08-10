@@ -10,6 +10,14 @@ WHISPER_MODEL_SIZE = "small"
 WHISPER_COMPUTE_TYPE = "int8"
 WHISPER_DEVICE = "cpu"
 
+# TTS: Silero — активный бэкенд по умолчанию (естественнее Piper, ценой
+# torch как зависимости). PiperSynthesizer в app/tts.py остаётся рабочим и
+# протестированным — переключить обратно можно в server.py.
+SILERO_LANGUAGE = "ru"
+SILERO_MODEL_ID = "v4_ru"
+SILERO_SPEAKER = "xenia"
+SILERO_SAMPLE_RATE = 48000
+
 # Только loopback: сервис рассчитан на одного локального пользователя.
 HOST = "127.0.0.1"
 PORT = 8000

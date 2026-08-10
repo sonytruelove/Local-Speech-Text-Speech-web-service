@@ -1,4 +1,4 @@
-"""Синтез речи: интерфейс + реализация на Piper."""
+"""Синтез речи: интерфейс + реализации на Piper и Silero."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import os
 import shutil
 import wave
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 # Файл-маркер, который пишем сами после успешного копирования bundled espeak-ng
 # data — отличает "это наша полная копия" от произвольной чужой директории с
@@ -27,6 +27,19 @@ class SynthesisProducedNoAudioError(RuntimeError):
     """TTS-бэкенд не сгенерировал ни одного аудио-сэмпла для переданного текста
     (например, текст состоит только из символов, для которых у бэкенда нет
     фонем — эмодзи, неподдерживаемая письменность, управляющие символы)."""
+
+
+def local_app_cache_root() -> Path:
+    """Каталог для локального кэша приложения (скачанные модели, конвертации).
+
+    Всегда должен быть ASCII, в отличие от самого проекта: и espeak-ng
+    (внутри Piper), и libtorch (внутри Silero) — компилированный код,
+    открывающий файлы через узкие файловые API, которые на Windows не могут
+    открыть путь с не-ASCII символами. LOCALAPPDATA для обычного пользователя
+    ASCII почти всегда (в отличие от пути проекта, который может лежать под
+    кириллической папкой, как в этом случае).
+    """
+    return Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
 
 
 def synthesize_wav_bytes(voice: WavWriter, text: str) -> bytes:
@@ -84,9 +97,66 @@ class PiperSynthesizer:
         from piper import PiperVoice
         from piper.phonemize_espeak import ESPEAK_DATA_DIR
 
-        cache_root = Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
-        data_dir = ascii_safe_espeak_data_dir(ESPEAK_DATA_DIR, cache_root)
+        data_dir = ascii_safe_espeak_data_dir(ESPEAK_DATA_DIR, local_app_cache_root())
         self._voice = PiperVoice.load(model_path, espeak_data_dir=str(data_dir))
 
     def synthesize(self, text: str) -> bytes:
         return synthesize_wav_bytes(self._voice, text)
+
+
+def audio_tensor_to_wav_bytes(samples: Any, sample_rate: int) -> bytes:
+    """Конвертирует float-сэмплы (-1..1) в WAV.
+
+    samples: Any — намеренно: принимает torch.Tensor, numpy.ndarray или
+    обычный список/кортеж (numpy.asarray разворачивает любой array-like).
+    Функция ничего не знает про torch — держит её тестируемой без установки
+    torch (см. tests/test_tts_silero.py), а не сужает тип искусственно.
+    """
+    import numpy as np
+
+    array = samples.numpy() if hasattr(samples, "numpy") else np.asarray(samples, dtype=np.float32)
+    pcm16 = (np.clip(array, -1.0, 1.0) * 32767).astype(np.int16)
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm16.tobytes())
+    return buf.getvalue()
+
+
+class SileroSynthesizer:
+    """SpeechSynthesizer поверх Silero TTS (snakers4/silero-models, torch, CPU).
+
+    Естественнее звучит, чем Piper, ценой более тяжёлой зависимости (torch).
+    """
+
+    def __init__(
+        self,
+        language: str,
+        model_id: str,
+        speaker: str,
+        sample_rate: int,
+    ) -> None:
+        import torch
+
+        torch.hub.set_dir(str(local_app_cache_root() / "voice-echo-service" / "torch-hub"))
+        self._model, _ = torch.hub.load(
+            repo_or_dir="snakers4/silero-models",
+            model="silero_tts",
+            language=language,
+            speaker=model_id,
+            trust_repo=True,
+        )
+        self._model.to(torch.device("cpu"))
+        self._speaker = speaker
+        self._sample_rate = sample_rate
+
+    def synthesize(self, text: str) -> bytes:
+        audio = self._model.apply_tts(
+            text=text, speaker=self._speaker, sample_rate=self._sample_rate
+        )
+        if audio.numel() == 0:
+            raise SynthesisProducedNoAudioError(f"Silero не сгенерировал аудио: text={text!r}")
+        return audio_tensor_to_wav_bytes(audio, self._sample_rate)
