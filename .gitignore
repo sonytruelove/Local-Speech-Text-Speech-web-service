@@ -1,0 +1,16 @@
+.venv/
+.venv-wsl/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mutmut-cache
+
+# Скачиваются download_models.ps1 / faster-whisper при первом запуске —
+# не коммитим бинарники моделей в репозиторий.
+models/
+
+.env
+*.local

@@ -1,0 +1,33 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m \"not real_models\" --cov=app --cov-report=term-missing"
+markers = [
+    "real_models: требует реальных тяжёлых моделей (сеть/CPU), пропускается по умолчанию",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [".venv/*", "*/.venv/*", "tests/*"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's Depends/File/Query/Body are *designed* to be called in argument
+# defaults (that's how FastAPI's DI works) — not the mutable-default-arg bug
+# B008 targets elsewhere.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Query", "fastapi.Body"]

@@ -1,0 +1,10 @@
+-r requirements.txt
+pytest
+pytest-cov
+pytest-asyncio
+pytest-bdd
+httpx
+ruff
+radon
+bandit
+mutmut

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Голосовое эхо</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Голосовое эхо</h1>
+    <p class="hint">
+      «Старт» → говорите в микрофон → «Стоп».<br>
+      faster-whisper распознает речь, Piper озвучит тот же текст.
+    </p>
+
+    <div class="controls">
+      <button id="startBtn">Старт</button>
+      <button id="stopBtn" disabled>Стоп</button>
+    </div>
+
+    <div class="status" id="status">Готово к записи</div>
+
+    <div class="result">
+      <label>Распознанный текст</label>
+      <div id="transcript" class="transcript"></div>
+    </div>
+
+    <audio id="player" controls></audio>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
