@@ -6,7 +6,13 @@
 import io
 import wave
 
-from app.tts import audio_tensor_to_wav_bytes
+import pytest
+
+from app.tts import (
+    SynthesisProducedNoAudioError,
+    audio_tensor_to_wav_bytes,
+    synthesize_with_silero_model,
+)
 
 
 def test_plain_list_of_samples_produces_valid_wav():
@@ -49,3 +55,54 @@ def test_sample_rate_is_passed_through_to_wav_header():
 
     with wave.open(io.BytesIO(result)) as wav_file:
         assert wav_file.getframerate() == 48000
+
+
+class _FakeAudioTensor:
+    """Достаточно похоже на torch.Tensor для audio_tensor_to_wav_bytes:
+    есть .numpy() и .numel()."""
+
+    def __init__(self, values: list[float]) -> None:
+        self._values = values
+
+    def numel(self) -> int:
+        return len(self._values)
+
+    def numpy(self):
+        import numpy as np
+
+        return np.asarray(self._values, dtype="float32")
+
+
+class _WorkingModel:
+    def apply_tts(self, text: str, speaker: str, sample_rate: int) -> _FakeAudioTensor:
+        return _FakeAudioTensor([0.1, -0.2, 0.3])
+
+
+class _EmptyAudioModel:
+    def apply_tts(self, text: str, speaker: str, sample_rate: int) -> _FakeAudioTensor:
+        return _FakeAudioTensor([])
+
+
+class _RaisingModel:
+    """Как настоящий Silero на неподдерживаемом языке: голый ValueError без
+    сообщения (см. регрессию, найденную в проде: EN-текст на RU-голосе)."""
+
+    def apply_tts(self, text: str, speaker: str, sample_rate: int) -> None:
+        raise ValueError
+
+
+def test_synthesize_with_silero_model_returns_wav_bytes_on_success():
+    result = synthesize_with_silero_model(_WorkingModel(), "текст", "speaker", 16000)
+    assert result[:4] == b"RIFF"
+
+
+def test_synthesize_with_silero_model_raises_on_zero_samples():
+    with pytest.raises(SynthesisProducedNoAudioError):
+        synthesize_with_silero_model(_EmptyAudioModel(), "текст", "speaker", 16000)
+
+
+def test_synthesize_with_silero_model_wraps_backend_exception():
+    # Регрессия: раньше голый ValueError из apply_tts улетал наружу
+    # необработанным и ронял /api/synthesize 500-й ошибкой.
+    with pytest.raises(SynthesisProducedNoAudioError):
+        synthesize_with_silero_model(_RaisingModel(), "some english text", "speaker", 16000)

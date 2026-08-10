@@ -29,11 +29,16 @@ def join_segments(segments: Iterable[SpeechSegment]) -> str:
 class FasterWhisperRecognizer:
     """SpeechRecognizer поверх faster_whisper.WhisperModel (CPU, int8)."""
 
-    def __init__(self, model_size: str, compute_type: str, device: str) -> None:
+    def __init__(
+        self, model_size: str, compute_type: str, device: str, language: str | None
+    ) -> None:
         from faster_whisper import WhisperModel
 
         self._model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        self._language = language
 
     def transcribe(self, audio_path: str) -> Transcription:
-        segments, info = self._model.transcribe(audio_path, vad_filter=True)
+        segments, info = self._model.transcribe(
+            audio_path, language=self._language, vad_filter=True
+        )
         return Transcription(text=join_segments(segments), language=info.language)

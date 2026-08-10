@@ -12,17 +12,20 @@ import logging
 from app.config import (
     HOST,
     PORT,
-    SILERO_LANGUAGE,
-    SILERO_MODEL_ID,
+    SILERO_DEFAULT_LANGUAGE,
+    SILERO_EN_MODEL_ID,
+    SILERO_EN_SPEAKER,
+    SILERO_RU_MODEL_ID,
+    SILERO_RU_SPEAKER,
     SILERO_SAMPLE_RATE,
-    SILERO_SPEAKER,
     WHISPER_COMPUTE_TYPE,
     WHISPER_DEVICE,
+    WHISPER_LANGUAGE,
     WHISPER_MODEL_SIZE,
 )
 from app.main import app
 from app.stt import FasterWhisperRecognizer
-from app.tts import SileroSynthesizer
+from app.tts import MultiLingualSynthesizer, SileroSynthesizer
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("voice-echo")
@@ -39,14 +42,26 @@ def build_app():
         model_size=WHISPER_MODEL_SIZE,
         compute_type=WHISPER_COMPUTE_TYPE,
         device=WHISPER_DEVICE,
+        language=WHISPER_LANGUAGE,
     )
 
-    log.info("Загружаю Silero TTS (%s, speaker=%s)...", SILERO_MODEL_ID, SILERO_SPEAKER)
-    app.state.synthesizer = SileroSynthesizer(
-        language=SILERO_LANGUAGE,
-        model_id=SILERO_MODEL_ID,
-        speaker=SILERO_SPEAKER,
-        sample_rate=SILERO_SAMPLE_RATE,
+    log.info("Загружаю Silero TTS (ru: %s, en: %s)...", SILERO_RU_MODEL_ID, SILERO_EN_MODEL_ID)
+    app.state.synthesizer = MultiLingualSynthesizer(
+        backends={
+            "ru": SileroSynthesizer(
+                language="ru",
+                model_id=SILERO_RU_MODEL_ID,
+                speaker=SILERO_RU_SPEAKER,
+                sample_rate=SILERO_SAMPLE_RATE,
+            ),
+            "en": SileroSynthesizer(
+                language="en",
+                model_id=SILERO_EN_MODEL_ID,
+                speaker=SILERO_EN_SPEAKER,
+                sample_rate=SILERO_SAMPLE_RATE,
+            ),
+        },
+        default_language=SILERO_DEFAULT_LANGUAGE,
     )
 
     log.info("Модели загружены, сервис готов.")

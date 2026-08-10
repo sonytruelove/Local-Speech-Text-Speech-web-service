@@ -126,6 +126,35 @@ def audio_tensor_to_wav_bytes(samples: Any, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
+class SileroModel(Protocol):
+    def apply_tts(self, text: str, speaker: str, sample_rate: int) -> Any: ...
+
+
+def synthesize_with_silero_model(
+    model: SileroModel, text: str, speaker: str, sample_rate: int
+) -> bytes:
+    """Вызывает model.apply_tts и конвертирует результат в WAV.
+
+    Каждая модель Silero рассчитана на один язык (см. MultiLingualSynthesizer,
+    который выбирает нужную): на тексте, который конкретная модель не может
+    озвучить (например, текст не на её языке или с непонятными ей символами),
+    apply_tts кидает свои внутренние исключения (на практике — вплоть до
+    голого ValueError без сообщения). Ловим любое исключение из бэкенда и
+    превращаем в понятную, типизированную ошибку с текстом в контексте —
+    вместо необработанного 500 в логах и у клиента.
+    """
+    try:
+        audio = model.apply_tts(text=text, speaker=speaker, sample_rate=sample_rate)
+    except Exception as exc:
+        raise SynthesisProducedNoAudioError(
+            f"Silero не смог озвучить текст (неподдерживаемый язык/символы?): text={text!r}"
+        ) from exc
+
+    if audio.numel() == 0:
+        raise SynthesisProducedNoAudioError(f"Silero не сгенерировал аудио: text={text!r}")
+    return audio_tensor_to_wav_bytes(audio, sample_rate)
+
+
 class SileroSynthesizer:
     """SpeechSynthesizer поверх Silero TTS (snakers4/silero-models, torch, CPU).
 
@@ -154,9 +183,36 @@ class SileroSynthesizer:
         self._sample_rate = sample_rate
 
     def synthesize(self, text: str) -> bytes:
-        audio = self._model.apply_tts(
-            text=text, speaker=self._speaker, sample_rate=self._sample_rate
-        )
-        if audio.numel() == 0:
-            raise SynthesisProducedNoAudioError(f"Silero не сгенерировал аудио: text={text!r}")
-        return audio_tensor_to_wav_bytes(audio, self._sample_rate)
+        return synthesize_with_silero_model(self._model, text, self._speaker, self._sample_rate)
+
+
+_CYRILLIC_RANGE = ("Ѐ", "ӿ")  # блок Unicode "Cyrillic"
+
+
+def detect_script_language(text: str) -> str:
+    """ "ru", если в тексте есть хоть один кириллический символ, иначе "en".
+
+    Это не полноценное определение языка (тем более не нужно тянуть под него
+    отдельную NLP-библиотеку) — сервис поддерживает ровно два TTS-голоса, и
+    для выбора между ними достаточно письменности: русский текст пишется
+    кириллицей, английский — латиницей.
+    """
+    has_cyrillic = any(_CYRILLIC_RANGE[0] <= ch <= _CYRILLIC_RANGE[1] for ch in text)
+    return "ru" if has_cyrillic else "en"
+
+
+class MultiLingualSynthesizer:
+    """SpeechSynthesizer, который выбирает язык-специфичный бэкенд по тексту.
+
+    Сам ничего не знает про Silero/Piper — бэкенды на каждый язык передаются
+    через DI (см. server.py), а не создаются здесь.
+    """
+
+    def __init__(self, backends: dict[str, SpeechSynthesizer], default_language: str) -> None:
+        self._backends = backends
+        self._default_language = default_language
+
+    def synthesize(self, text: str) -> bytes:
+        language = detect_script_language(text)
+        backend = self._backends.get(language, self._backends[self._default_language])
+        return backend.synthesize(text)
